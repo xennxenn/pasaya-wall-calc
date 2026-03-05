@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { 
-  Plus, Trash2, Image as ImageIcon, Maximize, X, Save, 
+  Plus, Trash2, Image as ImageIcon, X, Save, 
   Settings, Layout, FileText, ChevronRight, ChevronDown, 
   MousePointer2, SquareSquare, Upload, Home, User, Phone, MapPin, Edit,
   Undo2, Redo2, CheckCircle2, AlertCircle, Printer, LogOut, Users, KeyRound
@@ -30,7 +30,6 @@ try {
   app = initializeApp(firebaseConfig);
   auth = getAuth(app);
   db = getFirestore(app);
-  // const analytics = getAnalytics(app); // ปิดส่วนนี้ไว้เพื่อป้องกัน Vercel แจ้งเตือน Warning ว่าประกาศตัวแปรแล้วไม่ได้ใช้
 } catch (e) {
   console.error("Firebase init error", e);
 }
