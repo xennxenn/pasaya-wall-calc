@@ -281,6 +281,8 @@ export default function App() {
     if (activeProjectId && !viewableProjects.find(p => p.id === activeProjectId)) {
       setActiveProjectId(viewableProjects[0]?.id || null);
     }
+    // ปิดแจ้งเตือน eslint เพื่อป้องกัน loop ของ Vercel
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dbProjects, appUser]);
 
   useEffect(() => {
@@ -296,15 +298,23 @@ export default function App() {
   const activeWall = activeRoom?.walls.find(w => w.id === activeWallId);
 
   const updateProject = (updates) => {
-    setProjects(projects.map(p => p.id === activeProjectId ? { ...p, ...updates } : p));
+    setProjects(prev => prev.map(p => p.id === activeProjectId ? { ...p, ...updates } : p));
   };
 
   const updateActiveWall = (updates) => {
-    updateProject({
-      rooms: activeProject.rooms.map(r => r.id === activeRoomId ? {
-        ...r, walls: r.walls.map(w => w.id === activeWallId ? { ...w, ...updates } : w)
-      } : r)
-    });
+    setProjects(prev => prev.map(p => {
+      if (p.id !== activeProjectId) return p;
+      return {
+        ...p,
+        rooms: p.rooms.map(r => {
+          if (r.id !== activeRoomId) return r;
+          return {
+            ...r,
+            walls: r.walls.map(w => w.id === activeWallId ? { ...w, ...updates } : w)
+          };
+        })
+      };
+    }));
   };
 
   const createNewProject = () => {
@@ -1157,6 +1167,7 @@ function WallEditor({ wall, fabrics, updateWall }) {
 
   const [draftCalcMethod, setDraftCalcMethod] = useState(null);
   const [isEditingMethod, setIsEditingMethod] = useState(false);
+  const [imageError, setImageError] = useState('');
 
   useEffect(() => {
     setDraftCalcMethod(wall.calcMethod || null);
@@ -1166,10 +1177,12 @@ function WallEditor({ wall, fabrics, updateWall }) {
   const [history, setHistory] = useState([wall.shapes || []]);
   const [historyIndex, setHistoryIndex] = useState(0);
 
+  // แก้ไข 1: ไม่เอา wall.shapes มาผูกกับ useEffect นี้แล้ว เพื่อไม่ให้ History รีเซ็ตตัวเอง
   useEffect(() => {
     setHistory([wall.shapes || []]);
     setHistoryIndex(0);
-  }, [wall.id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wall.id]); 
 
   const shapes = wall.shapes || [];
   const selectedFabric = fabrics.find(f => f.id === wall.fabricId);
@@ -1202,6 +1215,7 @@ function WallEditor({ wall, fabrics, updateWall }) {
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
     if (file) {
+      setImageError('');
       const reader = new FileReader();
       reader.onloadend = (event) => {
         const img = new Image();
@@ -1220,6 +1234,10 @@ function WallEditor({ wall, fabrics, updateWall }) {
           updateWall({ image: compressedDataUrl, shapes: [] });
           setHistory([[]]);
           setHistoryIndex(0);
+        };
+        img.onerror = () => {
+          setImageError('เบราว์เซอร์ไม่รองรับไฟล์รูปภาพนี้ (เช่น ไฟล์ HEIC จากมือถือบางรุ่น) กรุณาใช้ไฟล์ JPG หรือ PNG ครับ');
+          setTimeout(() => setImageError(''), 7000);
         };
         img.src = event.target.result;
       };
@@ -1366,10 +1384,12 @@ function WallEditor({ wall, fabrics, updateWall }) {
                   type="button"
                   onClick={(e) => {
                     e.preventDefault();
+                    e.stopPropagation();
                     if(window.confirm('ต้องการเคลียร์พื้นที่ทั้งหมด (ทั้งพื้นที่ติดตั้งและเว้นว่าง) หรือไม่?')) {
-                      commitToHistory([]);
                       setDraftPoints([]);
+                      setMousePos(null);
                       setDraggingNode(null);
+                      commitToHistory([]);
                     }
                   }}
                   className="px-3 py-1.5 rounded-md text-sm font-medium border flex items-center gap-1 bg-white text-red-600 hover:bg-red-50 border-red-200 shadow-sm"
@@ -1383,6 +1403,8 @@ function WallEditor({ wall, fabrics, updateWall }) {
                       if(window.confirm('ต้องการเปลี่ยนรูปภาพหน้างานหรือไม่?')) {
                         updateWall({ image: null, shapes: [] });
                         setDraftPoints([]);
+                        setHistory([[]]);
+                        setHistoryIndex(0);
                       }
                     }}
                     className="px-3 py-1.5 rounded-md text-sm font-medium border flex items-center gap-1 bg-white text-gray-700 hover:bg-gray-50 shadow-sm"
@@ -1416,20 +1438,21 @@ function WallEditor({ wall, fabrics, updateWall }) {
                 >
                   <Upload size={18} /> เลือกรูปภาพหน้างาน
                 </button>
-                <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleImageUpload} />
+                {imageError && <p className="text-red-500 text-sm mt-3 bg-red-50 px-3 py-1.5 rounded border border-red-200 text-center max-w-xs">{imageError}</p>}
+                <input type="file" accept="image/*,.heic,.heif,.webp,.svg,.bmp" className="hidden" ref={fileInputRef} onChange={handleImageUpload} />
               </div>
             ) : (
-              <div className="relative inline-block w-full h-full text-center">
+              <div className="relative inline-block shadow-sm">
                 <img 
                   ref={imageRef}
                   src={wall.image} 
                   alt="Wall" 
-                  className="max-h-[600px] object-contain mx-auto select-none pointer-events-none" 
+                  className="max-h-[600px] w-auto block select-none pointer-events-none" 
                   draggable={false}
                 />
                 
                 <div 
-                  className="absolute top-0 left-0 w-full h-full"
+                  className="absolute top-0 left-0 w-full h-full cursor-crosshair"
                   onMouseMove={handleSvgMouseMove}
                   onMouseUp={handleSvgMouseUp}
                   onMouseLeave={handleSvgMouseUp}
