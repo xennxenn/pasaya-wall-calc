@@ -8,26 +8,29 @@ import {
 
 // --- Firebase Imports ---
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc } from 'firebase/firestore';
 
-// --- Firebase Initialization ---
-let app, auth, db, appId;
+// --- Firebase Initialization (แก้ไขสำหรับ Deploy จริง) ---
+// นำ Config ของคุณจาก Firebase Console มาวางแทนที่ตรงนี้ครับ
+const firebaseConfig = {
+  apiKey: "AIzaSyAVXIN5Z6NtJYgRS2JJ_f_sKnUjtXzp7rQ",
+  authDomain: "pasaya-wall-calc.firebaseapp.com",
+  projectId: "pasaya-wall-calc",
+  storageBucket: "pasaya-wall-calc.firebasestorage.app",
+  messagingSenderId: "965023362319",
+  appId: "1:965023362319:web:ee2407270f502bf4ca227a",
+  measurementId: "G-ETEZYKKDY3"
+};
+
+let app, auth, db;
+const appId = 'pasaya-wall-app'; // ชื่ออ้างอิงของ App
+
 try {
-  const firebaseConfig = {
-    apiKey: "AIzaSyAVXIN5Z6NtJYgRS2JJ_f_sKnUjtXzp7rQ",
-    authDomain: "pasaya-wall-calc.firebaseapp.com",
-    projectId: "pasaya-wall-calc",
-    storageBucket: "pasaya-wall-calc.firebasestorage.app",
-    messagingSenderId: "965023362319",
-    appId: "1:965023362319:web:ee2407270f502bf4ca227a",
-    measurementId: "G-ETEZYKKDY3"
-  };
-  
   app = initializeApp(firebaseConfig);
   auth = getAuth(app);
   db = getFirestore(app);
-  appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+  // const analytics = getAnalytics(app); // ปิดส่วนนี้ไว้เพื่อป้องกัน Vercel แจ้งเตือน Warning ว่าประกาศตัวแปรแล้วไม่ได้ใช้
 } catch (e) {
   console.error("Firebase init error", e);
 }
@@ -156,24 +159,21 @@ const calculateWall = (wall, fabric) => {
 
 // --- Main App Component ---
 export default function App() {
-  // Authentication & Global State
   const [fbUser, setFbUser] = useState(null);
-  const [appUser, setAppUser] = useState(null); // { username, name, role }
+  const [appUser, setAppUser] = useState(null); 
   const [isInitializing, setIsInitializing] = useState(true);
+  const [dbError, setDbError] = useState(''); // ดักจับ Error จาก Firebase
 
-  // Database State (Firestore Mirror)
   const [dbUsers, setDbUsers] = useState([]);
   const [dbFabrics, setDbFabrics] = useState([]);
   const [dbProjects, setDbProjects] = useState([]);
 
-  // App UI State
   const [activeTab, setActiveTab] = useState('dashboard');
   const [saveStatus, setSaveStatus] = useState('');
   
   const [newUserForm, setNewUserForm] = useState(null);
   const [newUserError, setNewUserError] = useState('');
 
-  // Projects State (Local edits before save)
   const [projects, setProjects] = useState([]);
   const [activeProjectId, setActiveProjectId] = useState(null);
   const [activeRoomId, setActiveRoomId] = useState(null);
@@ -184,13 +184,11 @@ export default function App() {
     if (!auth) { setIsInitializing(false); return; }
     const initAuth = async () => {
       try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
+        await signInAnonymously(auth);
       } catch (e) {
         console.error("Auth init failed", e);
+        setDbError('เชื่อมต่อล้มเหลว: กรุณาไปที่ Firebase Console > Authentication > Sign-in method แล้วเปิดใช้งานเมนู "Anonymous" ก่อนครับ');
+        setIsInitializing(false);
       }
     };
     initAuth();
@@ -204,6 +202,14 @@ export default function App() {
   useEffect(() => {
     if (!fbUser || !db) return;
 
+    const handleDbError = (err) => {
+      console.error("DB Error:", err);
+      if (err.code === 'permission-denied') {
+        setDbError('สิทธิ์เข้าถึงถูกปฏิเสธ: กรุณาไปที่ Firebase Console > Firestore Database > Rules แล้วแก้ไขบรรทัด allow read, write เป็น if true; ก่อนครับ');
+        setIsInitializing(false);
+      }
+    };
+
     // Users
     const usersRef = collection(db, 'artifacts', appId, 'public', 'data', 'users');
     const unsubUsers = onSnapshot(usersRef, (snap) => {
@@ -212,10 +218,11 @@ export default function App() {
       if (!loaded.find(u => u.username === 'Admin')) {
         setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'users', 'Admin'), {
           username: 'Admin', name: 'Administrator', password: '1234', role: 'admin'
-        });
+        }).catch(handleDbError);
       }
       setDbUsers(loaded);
-    }, console.error);
+      setDbError(''); // ลบแจ้งเตือนเมื่อดึงข้อมูลได้สำเร็จ
+    }, handleDbError);
 
     // Fabrics
     const fabricsRef = collection(db, 'artifacts', appId, 'public', 'data', 'fabrics');
@@ -223,15 +230,14 @@ export default function App() {
       const loaded = [];
       snap.forEach(doc => loaded.push(doc.data()));
       if (loaded.length === 0) {
-        // Initial Seed
         const f1 = { id: 'f1', name: 'PASAYA Wall Elegance', width: 137, vRepeat: 35, pricePerYard: 1250, installPricePerSqm: 350 };
         const f2 = { id: 'f2', name: 'PASAYA Smooth Solid', width: 137, vRepeat: 0, pricePerYard: 950, installPricePerSqm: 350 };
-        setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'fabrics', f1.id), f1);
-        setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'fabrics', f2.id), f2);
+        setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'fabrics', f1.id), f1).catch(handleDbError);
+        setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'fabrics', f2.id), f2).catch(handleDbError);
         loaded.push(f1, f2);
       }
       setDbFabrics(loaded);
-    }, console.error);
+    }, handleDbError);
 
     // Projects
     const projectsRef = collection(db, 'artifacts', appId, 'public', 'data', 'projects');
@@ -239,23 +245,20 @@ export default function App() {
       const loaded = [];
       snap.forEach(doc => loaded.push(doc.data()));
       setDbProjects(loaded);
-    }, console.error);
+    }, handleDbError);
 
     return () => { unsubUsers(); unsubFabrics(); unsubProjects(); };
   }, [fbUser]);
 
-  // --- 3. Handle Auto-Login & State Restoration ---
+  // --- 3. Handle Auto-Login ---
   useEffect(() => {
-    // Only process once users are loaded from DB
     if (dbUsers.length > 0 && isInitializing) {
       const savedUserStr = localStorage.getItem('pasaya_appUser');
       if (savedUserStr) {
         const savedUser = JSON.parse(savedUserStr);
-        // Verify user still exists and password matches
         const dbUser = dbUsers.find(u => u.username === savedUser.username && u.password === savedUser.password);
         if (dbUser) {
           setAppUser(dbUser);
-          // Restore UI State
           setActiveTab(localStorage.getItem('pasaya_activeTab') || 'dashboard');
           setActiveProjectId(localStorage.getItem('pasaya_activeProjectId') || null);
         } else {
@@ -266,7 +269,7 @@ export default function App() {
     }
   }, [dbUsers, isInitializing]);
 
-  // --- 4. Sync Local Projects with DB Projects based on Role ---
+  // --- 4. Sync Local Projects ---
   useEffect(() => {
     if (!appUser) return;
     let viewableProjects = dbProjects;
@@ -274,17 +277,13 @@ export default function App() {
       viewableProjects = dbProjects.filter(p => p.ownerId === appUser.username);
     }
     
-    // Merge remote changes into local state carefully (only if local hasn't diverged significantly, or just overwrite on initial load)
-    // For simplicity, we'll sync down. 
     setProjects(viewableProjects);
     
-    // Ensure activeProjectId is valid
     if (activeProjectId && !viewableProjects.find(p => p.id === activeProjectId)) {
       setActiveProjectId(viewableProjects[0]?.id || null);
     }
   }, [dbProjects, appUser]);
 
-  // Save UI State locally on change
   useEffect(() => {
     if (appUser) {
       localStorage.setItem('pasaya_activeTab', activeTab);
@@ -323,7 +322,6 @@ export default function App() {
       ],
       createdAt: new Date().toISOString()
     };
-    // Save to Firestore immediately
     setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'projects', newProj.id), newProj);
     setActiveProjectId(newProj.id);
     setActiveTab('project');
@@ -332,11 +330,9 @@ export default function App() {
   const saveToCloud = async () => {
     if (!fbUser || !appUser) return;
     try {
-      // Save Active Project
       if (activeProject) {
         await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'projects', activeProject.id), activeProject);
       }
-      // Save Fabrics if admin
       if (appUser.role === 'admin') {
         for (const f of dbFabrics) {
           await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'fabrics', f.id), f);
@@ -346,7 +342,7 @@ export default function App() {
       setTimeout(() => setSaveStatus(''), 3000);
     } catch (e) {
       console.error("Save error", e);
-      setSaveStatus('บันทึกผิดพลาด!');
+      setSaveStatus('บันทึกผิดพลาด! อาจเกิดจากสิทธิ์ Firebase');
       setTimeout(() => setSaveStatus(''), 3000);
     }
   };
@@ -371,14 +367,22 @@ export default function App() {
     }
   };
 
-  if (isInitializing) {
-    return <div className="min-h-screen flex items-center justify-center bg-gray-100">กำลังโหลดข้อมูล...</div>;
+  if (isInitializing && !dbError) {
+    return <div className="min-h-screen flex items-center justify-center bg-gray-100 font-sans">กำลังเชื่อมต่อฐานข้อมูล Firebase...</div>;
   }
 
   if (!appUser) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+      <div className="min-h-screen flex items-center justify-center bg-gray-100 font-sans p-4">
         <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-sm">
+          
+          {dbError && (
+             <div className="mb-6 p-4 bg-red-100 text-red-800 text-xs rounded-lg border border-red-300 shadow-sm leading-relaxed">
+               <h3 className="font-bold mb-1 text-sm flex items-center gap-1"><AlertCircle size={16}/> ข้อผิดพลาดจาก Firebase</h3>
+               {dbError}
+             </div>
+          )}
+
           <div className="flex flex-col items-center mb-6">
             <div className="w-16 h-16 bg-blue-900 rounded-2xl flex items-center justify-center text-white text-3xl font-bold mb-4 shadow-lg">P</div>
             <h1 className="text-2xl font-bold text-gray-800">PASAYA Wall Fabric</h1>
@@ -391,9 +395,9 @@ export default function App() {
               <div className="relative">
                 <User size={18} className="absolute left-3 top-3 text-gray-400" />
                 <input 
-                  type="text" required value={loginForm.user}
+                  type="text" required value={loginForm.user} disabled={!!dbError}
                   onChange={e => setLoginForm({...loginForm, user: e.target.value})}
-                  className="w-full border pl-10 p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" 
+                  className="w-full border pl-10 p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:bg-gray-100" 
                 />
               </div>
             </div>
@@ -402,22 +406,22 @@ export default function App() {
               <div className="relative">
                 <KeyRound size={18} className="absolute left-3 top-3 text-gray-400" />
                 <input 
-                  type="password" required value={loginForm.pass}
+                  type="password" required value={loginForm.pass} disabled={!!dbError}
                   onChange={e => setLoginForm({...loginForm, pass: e.target.value})}
-                  className="w-full border pl-10 p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" 
+                  className="w-full border pl-10 p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:bg-gray-100" 
                 />
               </div>
             </div>
             {loginError && <div className="text-xs text-red-500 text-center font-medium bg-red-50 py-2 rounded">{loginError}</div>}
             <div className="flex items-center">
               <input 
-                type="checkbox" id="remember" checked={loginForm.remember}
+                type="checkbox" id="remember" checked={loginForm.remember} disabled={!!dbError}
                 onChange={e => setLoginForm({...loginForm, remember: e.target.checked})}
-                className="mr-2 cursor-pointer w-4 h-4 text-blue-600 focus:ring-blue-500"
+                className="mr-2 cursor-pointer w-4 h-4 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
               />
               <label htmlFor="remember" className="text-sm text-gray-600 cursor-pointer">จดจำการเข้าสู่ระบบ</label>
             </div>
-            <button type="submit" className="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition shadow-md">
+            <button type="submit" disabled={!!dbError} className="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition shadow-md disabled:opacity-50 disabled:cursor-not-allowed">
               เข้าสู่ระบบ
             </button>
           </form>
@@ -542,7 +546,6 @@ export default function App() {
     );
   };
 
-  // --- Render Dashboard ---
   const renderDashboard = () => (
     <div className="p-6 max-w-6xl mx-auto animate-fadeIn">
       <div className="flex justify-between items-center mb-6">
@@ -691,7 +694,6 @@ export default function App() {
     if(!activeProject) return <div className="p-6 text-center text-gray-500">กรุณาเลือกหรือสร้างหน้างานจากเมนู "หน้ารายการงาน" ก่อน</div>;
     return (
       <div className="flex flex-col h-[calc(100vh-80px)] overflow-hidden animate-fadeIn">
-        {/* Project Info Header */}
         <div className="bg-white border-b px-6 py-4 shadow-sm z-10 flex flex-wrap gap-4 items-end justify-between">
           <div className="flex flex-wrap gap-4 flex-1">
             <div className="flex-1 min-w-[200px]">
@@ -730,7 +732,6 @@ export default function App() {
         </div>
 
         <div className="flex flex-1 overflow-hidden">
-          {/* Left Sidebar - Hierarchy */}
           <div className="w-72 bg-white border-r flex flex-col h-full">
             <div className="p-4 border-b flex justify-between items-center bg-gray-50">
               <h3 className="font-semibold text-gray-700">รายการพื้นที่</h3>
@@ -830,7 +831,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* Main Content Area */}
           <div className="flex-1 bg-gray-50 overflow-y-auto relative">
             {!activeWall ? (
               <div className="h-full flex flex-col items-center justify-center text-gray-400">
@@ -1068,7 +1068,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col font-sans print:bg-white">
-      {/* Header / Nav */}
       <div className="bg-white border-b shadow-sm z-20 relative print:hidden">
         <div className="max-w-[1400px] mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -1206,7 +1205,6 @@ function WallEditor({ wall, fabrics, updateWall }) {
     if (file) {
       const reader = new FileReader();
       reader.onloadend = (event) => {
-        // บีบอัดรูปภาพก่อนบันทึกลง Cloud (Firestore Limit: 1MB)
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement('canvas');
@@ -1219,7 +1217,7 @@ function WallEditor({ wall, fabrics, updateWall }) {
           canvas.width = w; canvas.height = h;
           const ctx = canvas.getContext('2d');
           ctx.drawImage(img, 0, 0, w, h);
-          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.6); // Quality 60%
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.6); 
           updateWall({ image: compressedDataUrl, shapes: [] });
           setHistory([[]]);
           setHistoryIndex(0);
@@ -1383,7 +1381,7 @@ function WallEditor({ wall, fabrics, updateWall }) {
                 {wall.image && (
                   <button 
                     onClick={() => {
-                      if(confirm('ต้องการเปลี่ยนรูปภาพหน้างานหรือไม่?')) {
+                      if(window.confirm('ต้องการเปลี่ยนรูปภาพหน้างานหรือไม่?')) {
                         updateWall({ image: null, shapes: [] });
                         setDraftPoints([]);
                       }
