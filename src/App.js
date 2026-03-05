@@ -530,7 +530,7 @@ export default function App() {
                   <td className="p-3 text-center">
                     {u.username !== 'Admin' && (
                       <button onClick={() => {
-                        if(confirm('ต้องการลบพนักงานนี้?')) deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'users', u.username));
+                        if(window.confirm('ต้องการลบพนักงานนี้?')) deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'users', u.username));
                       }} className="text-red-500 hover:text-red-700 p-2">
                         <Trash2 size={18} />
                       </button>
@@ -587,7 +587,7 @@ export default function App() {
                 <div className="flex gap-2">
                   <button 
                     onClick={async () => {
-                      if(confirm('ต้องการลบโปรเจกต์นี้ถาวรใช่หรือไม่?')) {
+                      if(window.confirm('ต้องการลบโปรเจกต์นี้ถาวรใช่หรือไม่?')) {
                         await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'projects', proj.id));
                         if (activeProjectId === proj.id) setActiveProjectId(projects[0]?.id);
                       }
@@ -670,7 +670,7 @@ export default function App() {
                 {appUser.role === 'admin' && (
                   <td className="p-3 text-center">
                     <button onClick={() => {
-                      if(confirm('ลบรุ่นผ้านี้?')) deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'fabrics', fabric.id));
+                      if(window.confirm('ลบรุ่นผ้านี้?')) deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'fabrics', fabric.id));
                     }} className="text-red-500 hover:text-red-700 p-2">
                       <Trash2 size={18} />
                     </button>
@@ -771,7 +771,7 @@ export default function App() {
                       <button 
                         onClick={(e) => {
                           e.stopPropagation();
-                          if(confirm('ยืนยันการลบห้องนี้?')) {
+                          if(window.confirm('ยืนยันการลบห้องนี้?')) {
                             updateProject({ rooms: activeProject.rooms.filter(r => r.id !== room.id) });
                             if(activeRoomId === room.id) { setActiveRoomId(null); setActiveWallId(null); }
                           }
@@ -811,7 +811,7 @@ export default function App() {
                           <button 
                             onClick={(e) => {
                               e.stopPropagation();
-                              if(confirm('ลบผนังนี้?')) {
+                              if(window.confirm('ลบผนังนี้?')) {
                                 updateProject({ rooms: activeProject.rooms.map(r => r.id === room.id ? { ...r, walls: r.walls.filter(w => w.id !== wall.id) } : r) });
                                 if(activeWallId === wall.id) setActiveWallId(null);
                               }
